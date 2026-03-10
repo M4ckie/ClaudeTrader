@@ -26,7 +26,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config.settings import WATCHLIST, DB_PATH, SCENARIOS, DEFAULT_SCENARIO
+from config.settings import (
+    WATCHLIST, DB_PATH, SCENARIOS, DEFAULT_SCENARIO,
+    SCREENER_ENABLED, LLM_DISCOVERY_ENABLED, LLM_DISCOVERY_MAX,
+)
 from data.database import init_database, db_session
 from data.price_collector import collect_prices
 from data.indicator_engine import compute_and_store
@@ -36,6 +39,70 @@ from utils.logger import setup_logging
 
 
 logger = setup_logging()
+
+
+def _build_ticker_universe() -> list[str]:
+    """
+    Build the full list of tickers to research for today's run.
+
+    Starts with the static WATCHLIST, then adds candidates from:
+      1. Yahoo Finance screener (most active, top gainers)
+      2. Claude's discovery suggestions (based on recent news)
+      3. News headline ticker extraction (mentions in stored news)
+
+    Returns a deduplicated list preserving WATCHLIST order first.
+    """
+    from data.screener import screen_candidates, extract_news_tickers
+
+    all_tickers = list(WATCHLIST)  # start with core watchlist
+
+    # 1. Screener
+    if SCREENER_ENABLED:
+        try:
+            screener_picks = screen_candidates(exclude_tickers=all_tickers)
+            if screener_picks:
+                logger.info("Screener added %d ticker(s): %s", len(screener_picks), screener_picks)
+                all_tickers.extend(screener_picks)
+        except Exception as e:
+            logger.warning("Screener failed, skipping: %s", e)
+
+    # 2. News ticker extraction (free, no API cost)
+    try:
+        news_picks = extract_news_tickers(exclude_tickers=all_tickers)
+        if news_picks:
+            logger.info("News extraction added %d ticker(s): %s", len(news_picks), news_picks)
+            all_tickers.extend(news_picks)
+    except Exception as e:
+        logger.warning("News ticker extraction failed, skipping: %s", e)
+
+    # 3. LLM discovery (Claude suggests tickers)
+    if LLM_DISCOVERY_ENABLED:
+        try:
+            from strategy.discovery import discover_tickers
+            llm_picks = discover_tickers(
+                exclude_tickers=all_tickers,
+                max_suggestions=LLM_DISCOVERY_MAX,
+            )
+            if llm_picks:
+                logger.info("LLM discovery added %d ticker(s): %s", len(llm_picks), llm_picks)
+                all_tickers.extend(llm_picks)
+        except Exception as e:
+            logger.warning("LLM discovery failed, skipping: %s", e)
+
+    # Deduplicate while preserving order
+    seen = set()
+    result = []
+    for t in all_tickers:
+        if t not in seen:
+            seen.add(t)
+            result.append(t)
+
+    extra = [t for t in result if t not in WATCHLIST]
+    logger.info(
+        "Ticker universe: %d total (%d watchlist + %d discovered): %s",
+        len(result), len(WATCHLIST), len(extra), extra or "none",
+    )
+    return result
 
 
 def cmd_briefing(scenario: str = DEFAULT_SCENARIO):
@@ -81,19 +148,23 @@ def cmd_trade(dry_run: bool = False, scenario: str = DEFAULT_SCENARIO):
                 " (DRY RUN)" if dry_run else "", scenario, scenario_cfg["label"])
     logger.info("=" * 60)
 
-    # 1. Collect fresh data
-    logger.info("[1/5] Collecting data...")
-    collect_prices()
-    compute_and_store()
-    collect_fundamentals()
-    collect_news()
+    # 0. Build ticker universe (watchlist + screener + LLM discovery + news)
+    logger.info("[0/5] Building ticker universe...")
+    all_tickers = _build_ticker_universe()
+
+    # 1. Collect fresh data for all tickers
+    logger.info("[1/5] Collecting data for %d tickers...", len(all_tickers))
+    collect_prices(tickers=all_tickers)
+    compute_and_store(tickers=all_tickers)
+    collect_fundamentals(tickers=all_tickers)
+    collect_news(tickers=all_tickers)
 
     # 2. Load portfolio and get current prices
     sim = Simulator.load(scenario=scenario)
     current_prices = {}
     ticker_sectors = {}
     import os, sys as _sys
-    for ticker in WATCHLIST:
+    for ticker in all_tickers:
         try:
             # Suppress yfinance 502/error output
             with open(os.devnull, "w") as devnull:
@@ -113,7 +184,7 @@ def cmd_trade(dry_run: bool = False, scenario: str = DEFAULT_SCENARIO):
 
     # Fall back to latest DB price for any ticker yfinance couldn't reach
     with db_session() as conn:
-        for ticker in WATCHLIST:
+        for ticker in all_tickers:
             if ticker not in current_prices or current_prices[ticker] == 0:
                 row = conn.execute(
                     "SELECT close FROM daily_prices WHERE ticker = ? ORDER BY date DESC LIMIT 1",
@@ -136,7 +207,11 @@ def cmd_trade(dry_run: bool = False, scenario: str = DEFAULT_SCENARIO):
 
     # 3. Run LLM strategy
     logger.info("[2/5] Running LLM strategy...")
-    proposals, raw_response = run_strategy(portfolio_context=portfolio_context, scenario=scenario)
+    proposals, raw_response = run_strategy(
+        tickers=all_tickers,
+        portfolio_context=portfolio_context,
+        scenario=scenario,
+    )
 
     if not proposals:
         logger.info("No trade proposals from Claude — nothing to do.")

@@ -54,6 +54,19 @@ NEWS_LOOKBACK_DAYS = 7  # how far back to search for news
 # Which financial statements to pull
 FUNDAMENTAL_STATEMENTS = ["income", "balance", "ratios", "earnings_calendar"]
 
+# ── Screener ─────────────────────────────────────────────────────────────
+# Yahoo Finance pre-built screens to pull candidates from each run.
+# Valid IDs: most_actives, day_gainers, day_losers, undervalued_growth_stocks
+SCREENER_ENABLED = True
+SCREENER_SCREENS = ["most_actives", "day_gainers"]
+SCREENER_MAX_CANDIDATES = 10   # max new tickers to add per run
+SCREENER_MIN_PRICE = 10.0      # ignore penny stocks
+SCREENER_MIN_VOLUME = 500_000  # ignore illiquid stocks
+
+# LLM Discovery — Claude suggests additional tickers based on news context
+LLM_DISCOVERY_ENABLED = True
+LLM_DISCOVERY_MAX = 5          # max tickers to request from Claude
+
 # ── LLM Strategy ────────────────────────────────────────────────────────
 LLM_MODEL = "claude-sonnet-4-20250514"
 LLM_MAX_TOKENS = 1500
