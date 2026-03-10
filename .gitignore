@@ -1,0 +1,40 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Secrets and local config
+.env
+config/settings_local.py
+
+# Database and runtime data
+data/trading.db
+data/*.db
+
+# Logs
+logs/
+*.log
+
+# Trade journal
+journal/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/

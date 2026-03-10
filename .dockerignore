@@ -1,0 +1,9 @@
+.venv
+__pycache__
+*.pyc
+.env
+config/settings_local.py
+data/trading.db
+logs/
+journal/
+.git

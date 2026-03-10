@@ -1,0 +1,16 @@
+services:
+  swingtrader:
+    build: .
+    container_name: swingtrader
+    restart: unless-stopped
+    ports:
+      - "8501:8501"       # Streamlit dashboard
+    volumes:
+      - ./data:/app/data  # Persist SQLite database
+      - ./logs:/app/logs  # Persist logs
+    environment:
+      # API Keys — set these or use a .env file
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - NEWS_API_KEY=${NEWS_API_KEY}
+      # Time to run daily trade pipeline (UTC). Default = 21:30 = 4:30pm ET
+      - TRADE_TIME=${TRADE_TIME:-21:30}
