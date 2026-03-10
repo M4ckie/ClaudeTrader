@@ -6,8 +6,9 @@ services:
     ports:
       - "8501:8501"       # Streamlit dashboard
     volumes:
-      - ./data:/app/data  # Persist SQLite database
-      - ./logs:/app/logs  # Persist logs
+      - ./data:/app/data       # Persist SQLite database
+      - ./logs:/app/logs       # Persist logs
+      - ./journal:/app/journal # Persist daily trade journal JSONL files
     environment:
       # API Keys — set these or use a .env file
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
