@@ -26,6 +26,32 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Mobile-responsive CSS ────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* Stack columns vertically on small screens */
+@media (max-width: 640px) {
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 100% !important;
+        min-width: 100% !important;
+    }
+    /* Reduce chart padding on mobile */
+    [data-testid="stMetric"] {
+        padding: 0.5rem 0.25rem;
+    }
+    /* Full-width dataframes */
+    [data-testid="stDataFrame"] {
+        width: 100% !important;
+    }
+    /* Tighten sidebar toggle button */
+    [data-testid="stSidebarCollapsedControl"] {
+        top: 0.5rem;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── Sidebar nav ──────────────────────────────────────────────────────────────
 st.sidebar.title("SwingTrader AI")
 
@@ -38,7 +64,7 @@ selected_scenario = st.sidebar.selectbox(
 
 page = st.sidebar.radio(
     "Navigate",
-    ["Portfolio Overview", "Trade Journal", "Market Data", "News Feed"],
+    ["Portfolio Overview", "Trade Journal", "Market Data", "News Feed", "Briefing"],
 )
 st.sidebar.divider()
 if st.sidebar.button("Refresh Data"):
@@ -145,6 +171,13 @@ def load_news(ticker: str = None, limit: int = 30):
                 conn, params=(limit,),
             )
     return df
+
+
+@st.cache_data(ttl=300)
+def load_briefing(scenario: str):
+    """Generate the current market briefing (cached 5 min — it's slow to build)."""
+    from analysis.briefing_generator import build_market_briefing
+    return build_market_briefing(scenario=scenario)
 
 
 @st.cache_data(ttl=60)
@@ -411,6 +444,8 @@ elif page == "Market Data":
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: News Feed
 # ════════════════════════════════════════════════════════════════════════════
+# PAGE: News Feed
+# ════════════════════════════════════════════════════════════════════════════
 elif page == "News Feed":
     st.title("News Feed")
 
@@ -433,3 +468,35 @@ elif page == "News Feed":
                 col1.markdown(f"**{row['ticker']}**  \n`{pub}`")
                 col2.markdown(f"{row['headline']}  \n*{row.get('source', '')}*")
             st.divider()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: Briefing
+# ════════════════════════════════════════════════════════════════════════════
+elif page == "Briefing":
+    st.title(f"Market Briefing — {scenario_labels[selected_scenario]}")
+    st.caption(
+        "This is the exact briefing sent to Claude each trading run. "
+        "Cached for 5 minutes — click Regenerate to force a fresh build."
+    )
+
+    col1, col2 = st.columns([1, 4])
+    regenerate = col1.button("Regenerate Briefing")
+    if regenerate:
+        load_briefing.clear()
+
+    with st.spinner("Building briefing from database..."):
+        briefing_text = load_briefing(selected_scenario)
+
+    st.divider()
+
+    # Split into per-ticker sections and show each in an expander
+    sections = briefing_text.split("\n=== ")
+    header = sections[0]
+    st.text(header.strip())
+
+    if len(sections) > 1:
+        for section in sections[1:]:
+            ticker_name = section.split(" ===")[0].strip()
+            with st.expander(f"📊 {ticker_name}", expanded=False):
+                st.text(f"=== {section}".strip())
