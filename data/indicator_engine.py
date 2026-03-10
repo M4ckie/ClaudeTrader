@@ -106,32 +106,29 @@ def save_indicators(conn, ticker: str, df: pd.DataFrame):
         "atr_14", "bbands_upper", "bbands_mid", "bbands_lower",
         "volume_sma_20", "volume_ratio",
     ]
+    all_cols = ["ticker", "date"] + indicator_cols
+    placeholders = ", ".join(f":{k}" for k in all_cols)
+    columns = ", ".join(all_cols)
+    updates = ", ".join(f"{k} = excluded.{k}" for k in indicator_cols)
 
+    sql = f"""
+        INSERT INTO indicators ({columns})
+        VALUES ({placeholders})
+        ON CONFLICT(ticker, date) DO UPDATE SET {updates}
+    """
+
+    rows = []
     for _, row in df.iterrows():
         date_str = row["date"]
         if hasattr(date_str, "strftime"):
             date_str = date_str.strftime("%Y-%m-%d")
-
         values = {"ticker": ticker, "date": date_str}
         for col in indicator_cols:
             val = row.get(col)
             values[col] = float(val) if pd.notna(val) else None
+        rows.append(values)
 
-        placeholders = ", ".join(f":{k}" for k in values.keys())
-        columns = ", ".join(values.keys())
-        updates = ", ".join(
-            f"{k} = excluded.{k}" for k in values.keys()
-            if k not in ("ticker", "date")
-        )
-
-        conn.execute(
-            f"""
-            INSERT INTO indicators ({columns})
-            VALUES ({placeholders})
-            ON CONFLICT(ticker, date) DO UPDATE SET {updates}
-            """,
-            values,
-        )
+    conn.executemany(sql, rows)
 
 
 def compute_and_store(tickers: Optional[list[str]] = None):

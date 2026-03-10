@@ -11,25 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import os
-import sys as _sys
-from contextlib import contextmanager
-
 import yfinance as yf
-
-
-@contextmanager
-def _suppress_output():
-    with open(os.devnull, "w") as devnull:
-        old_out, old_err = _sys.stdout, _sys.stderr
-        _sys.stdout, _sys.stderr = devnull, devnull
-        try:
-            yield
-        finally:
-            _sys.stdout, _sys.stderr = old_out, old_err
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from data.utils import suppress_output as _suppress_output
 from config.settings import WATCHLIST
 from data.database import db_session, init_database
 
@@ -103,7 +90,7 @@ def fetch_fundamentals(ticker: str) -> Optional[dict]:
         }
 
     except Exception as e:
-        logger.error(f"Failed to fetch fundamentals for {ticker}: {e}")
+        logger.error("Failed to fetch fundamentals for %s [%s]: %s", ticker, type(e).__name__, e)
         return None
 
 
@@ -138,7 +125,7 @@ def fetch_earnings_calendar(ticker: str) -> list[dict]:
         return results
 
     except Exception as e:
-        logger.error(f"Failed to fetch earnings calendar for {ticker}: {e}")
+        logger.error("Failed to fetch earnings calendar for %s [%s]: %s", ticker, type(e).__name__, e)
         return []
 
 

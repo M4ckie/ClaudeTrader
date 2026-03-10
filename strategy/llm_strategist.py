@@ -175,8 +175,15 @@ def run_strategy(
     # Parse decisions
     raw_decisions = _extract_json(response_text)
     if raw_decisions is None:
-        logger.error("Could not extract JSON from Claude response")
-        logger.warning("Raw response:\n%s", response_text)
+        logger.error(
+            "JSON extraction failed — Claude's response contained no parseable array. "
+            "This is a parsing error, NOT Claude choosing to pass. Raw response:\n%s",
+            response_text,
+        )
+        return [], response_text
+
+    if not raw_decisions:
+        logger.info("Claude returned an empty proposal list — no compelling setups found.")
         return [], response_text
 
     proposals = _parse_proposals(raw_decisions)

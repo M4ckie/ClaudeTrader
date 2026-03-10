@@ -22,6 +22,7 @@ from config.settings import (
     COMMISSION_PER_TRADE,
     SCENARIOS,
     DEFAULT_SCENARIO,
+    TRADE_JOURNAL_DIR,
 )
 from data.database import db_session, init_database
 from risk.risk_gate import PortfolioState, RiskDecision
@@ -191,11 +192,13 @@ class Simulator:
             self.cash -= total_value
 
             if proposal.ticker in self.positions:
-                # Average up/down
+                # Average up/down — recalculate avg price and reset stop relative to new avg
                 pos = self.positions[proposal.ticker]
                 new_qty = pos.quantity + qty
                 pos.avg_price = (pos.quantity * pos.avg_price + qty * fill_price) / new_qty
                 pos.quantity = new_qty
+                if decision.stop_loss_pct:
+                    pos.stop_loss_price = pos.avg_price * (1 - decision.stop_loss_pct / 100)
             else:
                 stop_price = fill_price * (1 - decision.stop_loss_pct / 100)
                 self.positions[proposal.ticker] = Position(
@@ -357,7 +360,7 @@ class Simulator:
     # ── Private helpers ──────────────────────────────────────────────────
 
     def _save_trade(self, trade: dict):
-        """Persist a trade record to the database."""
+        """Persist a trade record to the database and append to the daily journal file."""
         with db_session() as conn:
             conn.execute(
                 """
@@ -370,6 +373,22 @@ class Simulator:
                 """,
                 {"scenario": self.scenario, **trade},
             )
+        self._append_journal(trade)
+
+    def _append_journal(self, trade: dict):
+        """Append a trade entry to the daily JSONL journal file for audit purposes."""
+        try:
+            TRADE_JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+            journal_file = TRADE_JOURNAL_DIR / f"trades_{date.today().isoformat()}.jsonl"
+            entry = {
+                "executed_at": datetime.now().isoformat(),
+                "scenario": self.scenario,
+                **trade,
+            }
+            with journal_file.open("a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as e:
+            logger.warning("Could not write to trade journal: %s", e)
 
 
 if __name__ == "__main__":

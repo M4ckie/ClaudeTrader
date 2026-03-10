@@ -4,13 +4,19 @@ Risk Gate — Hard rule enforcement before any trade is executed.
 All proposed trades from the LLM must pass through here first.
 These are non-negotiable rules that override the LLM's judgment.
 
-Rules enforced:
-  - Max position size (% of portfolio)
-  - Max sector concentration
-  - Max total portfolio exposure
-  - Max daily loss stop
-  - Max open positions
-  - Stop loss placement
+BUY evaluation order (first failure returns immediately):
+  1. Daily loss circuit breaker — halt all buying if daily P&L <= -max_daily_loss_pct
+  2. Max open positions       — reject new tickers beyond the limit
+  3. Max total exposure       — reject buys when portfolio is fully deployed
+  4. Sector concentration     — reject if adding to sector would exceed max_sector_pct
+  5. Position size cap        — reduce quantity to fit within max_position_pct of portfolio
+  6. Stop loss cap            — widen stop is capped at 2× the scenario default
+
+SELL evaluation:
+  1. Must hold the ticker    — reject if not in portfolio
+  2. Quantity default        — if quantity is None, sell entire position
+
+All parameters are scenario-specific (see config/settings.py SCENARIOS dict).
 """
 
 import logging
@@ -145,7 +151,7 @@ def evaluate(
             f"Daily loss limit reached ({portfolio.daily_pnl_pct:.2f}% vs -{max_daily_loss_pct}% limit). "
             "No new trades today."
         )
-        logger.warning(f"[RISK] {proposal.ticker} REJECTED — daily loss circuit breaker")
+        logger.warning("[RISK] %s REJECTED — daily loss circuit breaker", proposal.ticker)
         return decision
 
     if proposal.action == "BUY":
@@ -157,7 +163,7 @@ def evaluate(
                 f"Max open positions reached ({open_count}/{max_open_positions}). "
                 "Close a position before opening a new one."
             )
-            logger.warning(f"[RISK] {proposal.ticker} REJECTED — max positions")
+            logger.warning("[RISK] %s REJECTED — max positions", proposal.ticker)
             return decision
 
         # ── Max total exposure ────────────────────────────────────────────
@@ -167,7 +173,7 @@ def evaluate(
                 f"Portfolio exposure {portfolio.exposure_pct:.1f}% is at max "
                 f"({max_total_exposure}% limit). Need to free up cash first."
             )
-            logger.warning(f"[RISK] {proposal.ticker} REJECTED — max exposure")
+            logger.warning("[RISK] %s REJECTED — max exposure", proposal.ticker)
             return decision
 
         # ── Sector concentration ──────────────────────────────────────────
@@ -179,7 +185,7 @@ def evaluate(
                     f"Sector '{ticker_sector}' already at {sector_pct:.1f}% of portfolio "
                     f"(limit: {max_sector_pct}%)."
                 )
-                logger.warning(f"[RISK] {proposal.ticker} REJECTED — sector concentration")
+                logger.warning("[RISK] %s REJECTED — sector concentration", proposal.ticker)
                 return decision
 
         # ── Position size cap ─────────────────────────────────────────────
@@ -191,7 +197,7 @@ def evaluate(
                 decision.rejection_reason = (
                     f"Insufficient cash (${portfolio.cash:,.2f}) or position limit would be exceeded."
                 )
-                logger.warning(f"[RISK] {proposal.ticker} REJECTED — no buying power")
+                logger.warning("[RISK] %s REJECTED — no buying power", proposal.ticker)
                 return decision
 
             if proposal.quantity and proposal.quantity > max_qty:
@@ -200,7 +206,7 @@ def evaluate(
                     f"{max_position_pct}% position limit."
                 )
                 decision.adjusted_quantity = max_qty
-                logger.info(f"[RISK] {proposal.ticker} quantity capped: {proposal.quantity} → {max_qty}")
+                logger.info("[RISK] %s quantity capped: %d → %d", proposal.ticker, proposal.quantity, max_qty)
             else:
                 if not proposal.quantity:
                     decision.adjusted_quantity = max_qty
@@ -217,7 +223,7 @@ def evaluate(
         if proposal.ticker not in portfolio.positions:
             decision.approved = False
             decision.rejection_reason = f"Cannot SELL {proposal.ticker} — not in portfolio."
-            logger.warning(f"[RISK] {proposal.ticker} SELL REJECTED — not held")
+            logger.warning("[RISK] %s SELL REJECTED — not held", proposal.ticker)
             return decision
 
         if not proposal.quantity:
@@ -226,8 +232,8 @@ def evaluate(
 
     if decision.approved:
         logger.info(
-            f"[RISK] {proposal.ticker} {proposal.action} APPROVED — "
-            f"qty={decision.final_quantity}, stop={decision.stop_loss_pct:.1f}%"
+            "[RISK] %s %s APPROVED — qty=%s, stop=%.1f%%",
+            proposal.ticker, proposal.action, decision.final_quantity, decision.stop_loss_pct,
         )
 
     return decision

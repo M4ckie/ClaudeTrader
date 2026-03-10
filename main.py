@@ -29,16 +29,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config.settings import (
     WATCHLIST, DB_PATH, SCENARIOS, DEFAULT_SCENARIO,
     SCREENER_ENABLED, LLM_DISCOVERY_ENABLED, LLM_DISCOVERY_MAX,
+    ANTHROPIC_API_KEY, NEWS_API_KEY, LLM_MODEL,
 )
 from data.database import init_database, db_session
 from data.price_collector import collect_prices
 from data.indicator_engine import compute_and_store
 from data.fundamental_collector import collect_fundamentals
 from data.news_collector import collect_news
+from data.utils import suppress_output
 from utils.logger import setup_logging
 
 
 logger = setup_logging()
+
+
+def _validate_config():
+    """Warn on startup about missing or suspicious configuration."""
+    if not ANTHROPIC_API_KEY:
+        logger.error(
+            "ANTHROPIC_API_KEY is not set. The 'trade' and 'briefing' commands will fail. "
+            "Set it via environment variable or settings_local.py."
+        )
+    if not NEWS_API_KEY:
+        logger.warning(
+            "NEWS_API_KEY is not set. News collection will be skipped. "
+            "Set it via environment variable or settings_local.py."
+        )
+    # Guard against the model being silently deprecated — warn if it looks stale
+    if LLM_MODEL and not LLM_MODEL.startswith("claude-"):
+        logger.warning("LLM_MODEL '%s' does not look like a valid Claude model ID.", LLM_MODEL)
 
 
 def _build_ticker_universe() -> list[str]:
@@ -152,35 +171,43 @@ def cmd_trade(dry_run: bool = False, scenario: str = DEFAULT_SCENARIO):
     logger.info("[0/5] Building ticker universe...")
     all_tickers = _build_ticker_universe()
 
-    # 1. Collect fresh data for all tickers
+    # 1. Collect fresh data for all tickers (each step is independent — failures are non-fatal)
     logger.info("[1/5] Collecting data for %d tickers...", len(all_tickers))
-    collect_prices(tickers=all_tickers)
-    compute_and_store(tickers=all_tickers)
-    collect_fundamentals(tickers=all_tickers)
-    collect_news(tickers=all_tickers)
+    try:
+        collect_prices(tickers=all_tickers)
+    except Exception as e:
+        logger.error("Price collection failed: %s", e)
+
+    try:
+        compute_and_store(tickers=all_tickers)
+    except Exception as e:
+        logger.error("Indicator computation failed: %s", e)
+
+    try:
+        collect_fundamentals(tickers=all_tickers)
+    except Exception as e:
+        logger.error("Fundamental collection failed: %s", e)
+
+    try:
+        collect_news(tickers=all_tickers)
+    except Exception as e:
+        logger.error("News collection failed: %s", e)
 
     # 2. Load portfolio and get current prices
     sim = Simulator.load(scenario=scenario)
     current_prices = {}
     ticker_sectors = {}
-    import os, sys as _sys
     for ticker in all_tickers:
         try:
-            # Suppress yfinance 502/error output
-            with open(os.devnull, "w") as devnull:
-                old_out, old_err = _sys.stdout, _sys.stderr
-                _sys.stdout, _sys.stderr = devnull, devnull
-                try:
-                    t = yf.Ticker(ticker)
-                    price = t.fast_info.last_price
-                    info = t.info or {}
-                finally:
-                    _sys.stdout, _sys.stderr = old_out, old_err
+            with suppress_output():
+                t = yf.Ticker(ticker)
+                price = t.fast_info.last_price
+                info = t.info or {}
             if price:
                 current_prices[ticker] = float(price)
             ticker_sectors[ticker] = info.get("sector", "")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not fetch live price for %s: %s", ticker, e)
 
     # Fall back to latest DB price for any ticker yfinance couldn't reach
     with db_session() as conn:
@@ -192,7 +219,7 @@ def cmd_trade(dry_run: bool = False, scenario: str = DEFAULT_SCENARIO):
                 ).fetchone()
                 if row:
                     current_prices[ticker] = float(row["close"])
-                    logger.info("Using last DB price for %s: %.2f", ticker, current_prices[ticker])
+                    logger.warning("Using stale DB price for %s: %.2f", ticker, current_prices[ticker])
 
             if ticker not in ticker_sectors:
                 row = conn.execute(
@@ -200,6 +227,10 @@ def cmd_trade(dry_run: bool = False, scenario: str = DEFAULT_SCENARIO):
                 ).fetchone()
                 if row:
                     ticker_sectors[ticker] = row["sector"] or ""
+
+    if not current_prices:
+        logger.error("No prices available for any ticker — aborting trade run.")
+        return
 
     sim.set_start_of_day(current_prices)
     portfolio_state = sim.portfolio_state(current_prices)
@@ -441,6 +472,7 @@ def main():
     )
 
     args = parser.parse_args()
+    _validate_config()
 
     commands = {
         "init": cmd_init,

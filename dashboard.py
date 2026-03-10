@@ -243,8 +243,8 @@ if page == "Portfolio Overview":
         # ── Performance stats ────────────────────────────────────────────────
         if len(snapshots_df) > 1:
             st.subheader("Performance")
-            from config.settings import INITIAL_CAPITAL
-            total_return = (snap["total_value"] - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100
+            initial_capital = SCENARIOS[selected_scenario]["initial_capital"]
+            total_return = (snap["total_value"] - initial_capital) / initial_capital * 100
             best_day = snapshots_df["daily_pnl_pct"].max()
             worst_day = snapshots_df["daily_pnl_pct"].min()
             win_days = (snapshots_df["daily_pnl_pct"] > 0).sum()

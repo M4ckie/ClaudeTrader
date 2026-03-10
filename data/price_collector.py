@@ -6,9 +6,6 @@ Caches everything in SQLite to avoid redundant API calls.
 """
 
 import logging
-import os
-import sys as _sys
-from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -19,17 +16,7 @@ import yfinance as yf
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
-@contextmanager
-def _suppress_output():
-    """Suppress stdout/stderr (silences yfinance print statements)."""
-    with open(os.devnull, "w") as devnull:
-        old_stdout, old_stderr = _sys.stdout, _sys.stderr
-        _sys.stdout, _sys.stderr = devnull, devnull
-        try:
-            yield
-        finally:
-            _sys.stdout, _sys.stderr = old_stdout, old_stderr
+from data.utils import suppress_output as _suppress_output
 
 
 def _has_trading_days(start_date: str, end_date: str) -> bool:
@@ -54,7 +41,7 @@ def fetch_stock_metadata(ticker: str) -> dict:
             "market_cap": info.get("marketCap", 0),
         }
     except Exception as e:
-        logger.warning(f"Could not fetch metadata for {ticker}: {e}")
+        logger.warning("Could not fetch metadata for %s [%s]: %s", ticker, type(e).__name__, e)
         return {
             "ticker": ticker,
             "name": "",
@@ -103,7 +90,7 @@ def fetch_price_history(
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
 
-    logger.info(f"Fetching {ticker} prices from {start_date} to {end_date}")
+    logger.info("Fetching %s prices from %s to %s", ticker, start_date, end_date)
 
     try:
         with _suppress_output():
@@ -115,11 +102,11 @@ def fetch_price_history(
                 auto_adjust=False,
             )
     except Exception as e:
-        logger.error(f"yfinance download failed for {ticker}: {e}")
+        logger.error("yfinance download failed for %s [%s]: %s", ticker, type(e).__name__, e)
         return pd.DataFrame()
 
     if df.empty:
-        logger.warning(f"No price data returned for {ticker}")
+        logger.warning("No price data returned for %s", ticker)
         return pd.DataFrame()
 
     # Normalize column names (yfinance sometimes returns MultiIndex)
@@ -146,7 +133,7 @@ def fetch_price_history(
     available = [c for c in cols if c in df.columns]
     df = df[available]
 
-    logger.info(f"Fetched {len(df)} rows for {ticker}")
+    logger.info("Fetched %d rows for %s", len(df), ticker)
     return df
 
 
@@ -155,30 +142,33 @@ def save_prices(conn, df: pd.DataFrame):
     if df.empty:
         return
 
-    for _, row in df.iterrows():
-        conn.execute(
-            """
-            INSERT INTO daily_prices (ticker, date, open, high, low, close, volume, adj_close)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(ticker, date) DO UPDATE SET
-                open = excluded.open,
-                high = excluded.high,
-                low = excluded.low,
-                close = excluded.close,
-                volume = excluded.volume,
-                adj_close = excluded.adj_close
-            """,
-            (
-                row["ticker"],
-                row["date"],
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("volume"),
-                row.get("adj_close"),
-            ),
+    rows = [
+        (
+            row["ticker"],
+            row["date"],
+            row.get("open"),
+            row.get("high"),
+            row.get("low"),
+            row.get("close"),
+            row.get("volume"),
+            row.get("adj_close"),
         )
+        for _, row in df.iterrows()
+    ]
+    conn.executemany(
+        """
+        INSERT INTO daily_prices (ticker, date, open, high, low, close, volume, adj_close)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(ticker, date) DO UPDATE SET
+            open = excluded.open,
+            high = excluded.high,
+            low = excluded.low,
+            close = excluded.close,
+            volume = excluded.volume,
+            adj_close = excluded.adj_close
+        """,
+        rows,
+    )
 
 
 def collect_prices(tickers: Optional[list[str]] = None, full_refresh: bool = False):
@@ -211,14 +201,14 @@ def collect_prices(tickers: Optional[list[str]] = None, full_refresh: bool = Fal
                             # Skip if no trading days have occurred since last fetch
                     today = datetime.now().strftime("%Y-%m-%d")
                     if not _has_trading_days(start_date, today):
-                        logger.info(f"{ticker} is up to date (latest: {latest})")
+                        logger.info("%s is up to date (latest: %s)", ticker, latest)
                         continue
 
             # Fetch and save
             df = fetch_price_history(ticker, start_date=start_date)
             save_prices(conn, df)
 
-    logger.info(f"Price collection complete for {len(tickers)} tickers")
+    logger.info("Price collection complete for %d tickers", len(tickers))
 
 
 if __name__ == "__main__":

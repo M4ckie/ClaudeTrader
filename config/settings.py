@@ -116,7 +116,13 @@ LOG_LEVEL = "INFO"
 LOG_FORMAT = "%(asctime)s | %(name)-20s | %(levelname)-7s | %(message)s"
 
 # ── Local overrides (API keys, personal config) ──────────────────────────
+# settings_local.py can override any name defined above (API keys, watchlist,
+# model, etc.). It is gitignored and never committed. In Docker, use env vars
+# instead. Any name exported from settings_local takes precedence.
+import logging as _log
 try:
     from config.settings_local import *  # noqa: F401, F403, E402
+    _log.getLogger(__name__).debug("settings_local.py loaded — local overrides active")
 except ImportError:
-    pass
+    _log.getLogger(__name__).debug("No settings_local.py found — using defaults and env vars")
+del _log

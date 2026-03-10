@@ -11,6 +11,7 @@ $TICKER mentions and parenthetical symbols to surface trending names.
 
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +35,11 @@ logger = logging.getLogger(__name__)
 _YAHOO_SCREENER_URL = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; ClaudeTrader/1.0)"}
 
+# Cache raw screener results per screen_id for 1 hour to avoid hammering Yahoo
+# across multiple same-day runs (scheduler, manual retries, etc.)
+_SCREENER_CACHE: dict[str, tuple[float, list]] = {}  # screen_id → (timestamp, quotes)
+_SCREENER_CACHE_TTL = 3600  # seconds
+
 # Keywords that indicate an ETF/fund rather than a stock
 _ETF_KEYWORDS = {
     "ETF", "FUND", "TRUST", "INDEX", "SHARES", "ISHARES",
@@ -53,7 +59,13 @@ _HEADLINE_NOISE = {
 
 
 def _fetch_yahoo_screen(screen_id: str, count: int = 30) -> list[dict]:
-    """Fetch quotes from a Yahoo Finance predefined screener."""
+    """Fetch quotes from a Yahoo Finance predefined screener (cached for 1 hour)."""
+    now = time.time()
+    cached_ts, cached_quotes = _SCREENER_CACHE.get(screen_id, (0.0, []))
+    if cached_quotes and (now - cached_ts) < _SCREENER_CACHE_TTL:
+        logger.info("Screener '%s': using cached results (%d quotes)", screen_id, len(cached_quotes))
+        return cached_quotes
+
     params = {"formatted": "false", "scrIds": screen_id, "count": count}
     try:
         resp = requests.get(
@@ -62,7 +74,9 @@ def _fetch_yahoo_screen(screen_id: str, count: int = 30) -> list[dict]:
         resp.raise_for_status()
         data = resp.json()
         results = data.get("finance", {}).get("result") or []
-        return results[0].get("quotes", []) if results else []
+        quotes = results[0].get("quotes", []) if results else []
+        _SCREENER_CACHE[screen_id] = (now, quotes)
+        return quotes
     except Exception as e:
         logger.warning("Yahoo screener '%s' failed: %s", screen_id, e)
         return []
