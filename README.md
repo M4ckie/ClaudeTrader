@@ -63,6 +63,7 @@ Every weekday after market close, the agent:
 
 ## Features
 
+- **Autonomous ticker discovery** — Goes beyond the static watchlist: Yahoo Finance screener (most active, top gainers), news headline extraction, and Claude-powered suggestions surface new opportunities daily
 - **Multi-scenario portfolios** — Run independent portfolios with different risk profiles simultaneously (e.g. conservative $100k and aggressive $1k)
 - **Claude-powered decisions** — Full market context (price action, technicals, fundamentals, news) sent to Claude; structured JSON trade proposals returned
 - **Hard risk gate** — Position size caps, sector concentration limits, max exposure, daily loss circuit breakers — Claude's judgment cannot override these
@@ -85,11 +86,13 @@ ClaudeTrader/
 │   ├── price_collector.py       # yfinance OHLCV, incremental fetching
 │   ├── indicator_engine.py      # pandas-ta: SMA, EMA, RSI, MACD, ATR, Bollinger
 │   ├── fundamental_collector.py # yfinance: income stmt, ratios, earnings dates
-│   └── news_collector.py        # NewsAPI: financial headlines per ticker
+│   ├── news_collector.py        # NewsAPI: financial headlines per ticker
+│   └── screener.py              # Yahoo Finance screener + news ticker extraction
 ├── analysis/
 │   └── briefing_generator.py    # Formats per-ticker briefings for the LLM
 ├── strategy/
-│   └── llm_strategist.py        # Claude API: sends briefing, parses trade proposals
+│   ├── llm_strategist.py        # Claude API: sends briefing, parses trade proposals
+│   └── discovery.py             # Claude-powered ticker discovery
 ├── risk/
 │   └── risk_gate.py             # Hard rule enforcement before any trade executes
 ├── execution/
