@@ -143,7 +143,7 @@ def run_strategy(
 
     # Build the briefing
     logger.info("Building market briefing for %d tickers...", len(tickers))
-    briefing = build_market_briefing(tickers=tickers, portfolio_context=portfolio_context)
+    briefing = build_market_briefing(tickers=tickers, portfolio_context=portfolio_context, scenario=scenario)
     logger.debug("Briefing length: %d chars", len(briefing))
 
     # Call Claude

@@ -141,7 +141,7 @@ def cmd_briefing(scenario: str = DEFAULT_SCENARIO):
             pass
 
     portfolio_context = sim.summary(prices) if prices else None
-    briefing = build_market_briefing(portfolio_context=portfolio_context)
+    briefing = build_market_briefing(portfolio_context=portfolio_context, scenario=scenario)
     print(briefing)
 
 

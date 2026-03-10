@@ -16,12 +16,14 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import WATCHLIST
+from config.settings import DEFAULT_SCENARIO
 from data.database import (
     db_session,
     get_latest_indicators,
     get_latest_fundamentals,
     get_recent_news,
     get_next_earnings,
+    get_recent_trades,
     get_price_dataframe,
 )
 
@@ -187,9 +189,36 @@ def build_ticker_briefing(conn, ticker: str) -> str:
     return "\n".join(lines)
 
 
+def _build_trade_history(conn, scenario: str, limit: int = 15) -> Optional[str]:
+    """
+    Build a compact recent trade history section for the briefing.
+
+    Gives Claude continuity — it can see what it decided recently, the
+    reasoning behind those decisions, and whether the thesis held up.
+    """
+    trades = get_recent_trades(conn, scenario, limit=limit)
+    if not trades:
+        return None
+
+    lines = ["RECENT TRADE HISTORY (most recent first):"]
+    for t in trades:
+        date_str = str(t.get("executed_at", ""))[:10]
+        action = t.get("action", "")
+        ticker = t.get("ticker", "")
+        qty = t.get("quantity", "")
+        price = t.get("price")
+        reasoning = (t.get("reasoning") or "").strip()
+        price_str = f"@ ${price:.2f}" if price else ""
+        reasoning_str = f'  — "{reasoning}"' if reasoning else ""
+        lines.append(f"  {date_str}  {action:4s}  {ticker:6s}  {qty} shares {price_str}{reasoning_str}")
+
+    return "\n".join(lines)
+
+
 def build_market_briefing(
     tickers: Optional[list[str]] = None,
     portfolio_context: Optional[str] = None,
+    scenario: str = DEFAULT_SCENARIO,
 ) -> str:
     """
     Build a full market briefing across all watched tickers.
@@ -219,21 +248,26 @@ def build_market_briefing(
         sections.append(portfolio_context)
         sections.append("")
 
-    sections.append("TICKER DATA:")
-    sections.append("")
-
     with db_session() as conn:
+        trade_history = _build_trade_history(conn, scenario)
+        if trade_history:
+            sections.append(trade_history)
+            sections.append("")
+
+        sections.append("TICKER DATA:")
+        sections.append("")
+
         for ticker in tickers:
             try:
                 briefing = build_ticker_briefing(conn, ticker)
                 sections.append(briefing)
                 sections.append("")
             except Exception as e:
-                logger.error(f"Failed to build briefing for {ticker}: {e}")
+                logger.error("Failed to build briefing for %s [%s]: %s", ticker, type(e).__name__, e)
                 sections.append(f"=== {ticker} === [Error: {e}]")
                 sections.append("")
 
-    logger.info(f"Built market briefing for {len(tickers)} tickers")
+    logger.info("Built market briefing for %d tickers", len(tickers))
     return "\n".join(sections)
 
 

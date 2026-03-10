@@ -287,6 +287,25 @@ def get_recent_news(
     return [dict(r) for r in rows]
 
 
+def get_recent_trades(
+    conn: sqlite3.Connection,
+    scenario: str,
+    limit: int = 15,
+) -> list[dict]:
+    """Get the most recent executed trades for a scenario, newest first."""
+    rows = conn.execute(
+        """
+        SELECT ticker, action, quantity, price, reasoning, confidence, executed_at
+        FROM trades
+        WHERE scenario = ?
+        ORDER BY executed_at DESC
+        LIMIT ?
+        """,
+        (scenario, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_next_earnings(
     conn: sqlite3.Connection, ticker: str
 ) -> Optional[dict]:
