@@ -87,7 +87,8 @@ ClaudeTrader/
 │   ├── indicator_engine.py      # pandas-ta: SMA, EMA, RSI, MACD, ATR, Bollinger
 │   ├── fundamental_collector.py # yfinance: income stmt, ratios, earnings dates
 │   ├── news_collector.py        # NewsAPI: financial headlines per ticker
-│   └── screener.py              # Yahoo Finance screener + news ticker extraction
+│   ├── screener.py              # Yahoo Finance screener + news ticker extraction
+│   └── utils.py                 # Shared helpers (suppress_output context manager)
 ├── analysis/
 │   └── briefing_generator.py    # Formats per-ticker briefings for the LLM
 ├── strategy/
@@ -99,6 +100,11 @@ ClaudeTrader/
 │   └── simulator.py             # Paper trading engine, scenario-aware
 ├── utils/
 │   └── logger.py                # Dual console + rotating file logging
+├── tests/
+│   ├── test_risk_gate.py        # Risk gate unit tests
+│   ├── test_simulator.py        # Simulator unit tests
+│   └── test_llm_strategist.py   # LLM strategist unit tests
+├── journal/                     # Daily JSONL trade files (written by simulator)
 ├── dashboard.py                 # Streamlit web UI
 ├── main.py                      # CLI entry point / orchestrator
 ├── start.sh                     # Docker entrypoint (init → dashboard → scheduler)
@@ -201,6 +207,14 @@ python main.py trade --scenario small
 python main.py briefing --scenario small
 python main.py schedule --time 21:30
 ```
+
+### Running Tests
+
+```bash
+pytest tests/
+```
+
+51 unit tests cover the risk gate, paper trading simulator, and LLM strategist.
 
 ---
 

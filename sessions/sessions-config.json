@@ -1,0 +1,59 @@
+{
+  "trigger_phrases": {
+    "implementation_mode": [
+      "yert",
+      "yesh"
+    ],
+    "discussion_mode": [
+      "SILENCE",
+      "hang on a sec"
+    ],
+    "task_creation": [
+      "mek:"
+    ],
+    "task_startup": [
+      "start^"
+    ],
+    "task_completion": [
+      "finito",
+      "fin"
+    ],
+    "context_compaction": [
+      "squish"
+    ]
+  },
+  "blocked_actions": {
+    "implementation_only_tools": [
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit"
+    ],
+    "bash_read_patterns": [],
+    "bash_write_patterns": [],
+    "extrasafe": false
+  },
+  "git_preferences": {
+    "add_pattern": "all",
+    "default_branch": "main",
+    "commit_style": "detailed",
+    "auto_merge": true,
+    "auto_push": true,
+    "has_submodules": false
+  },
+  "environment": {
+    "os": "linux",
+    "shell": "bash",
+    "developer_name": "Jon"
+  },
+  "features": {
+    "branch_enforcement": true,
+    "task_detection": true,
+    "auto_ultrathink": false,
+    "icon_style": "emoji",
+    "context_warnings": {
+      "warn_85": true,
+      "warn_90": true
+    }
+  }
+}
